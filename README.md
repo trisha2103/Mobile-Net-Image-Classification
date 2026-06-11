@@ -1,6 +1,6 @@
-#  MobileNet Image Classification & Sign Language Digits
+# 📱 MobileNet Image Classification
 
-> A two-part deep learning project: classify any image against **1,000 ImageNet categories** using MobileNet out-of-the-box, then fine-tune it to recognize **hand gestures for digits 0–9** from the Sign Language Digits Dataset.
+> Classify any image against **1,000 ImageNet categories** using Google's pretrained **MobileNet** model — no training required.
 
 <div align="center">
 
@@ -15,16 +15,13 @@
 
 ## 📌 Overview
 
-This project has two parts:
-
-1. **ImageNet Prediction Demo** — Run the pretrained MobileNet on 6 custom sample images and decode the top predictions from 1,000 ImageNet classes. Zero training needed.
-2. **Sign Language Digits Classifier** — Fine-tune MobileNet on the Sign Language Digits Dataset to classify hand gestures for digits **0 through 9** (10 classes).
+This project uses the **pretrained MobileNet** model to classify images straight out of the box — no fine-tuning, no dataset preparation. Load an image, preprocess it, and get back the **top-5 predicted labels** with confidence scores from ImageNet's 1,000 categories.
 
 ---
 
-## 🖼️ Sample Images — ImageNet Prediction Demo
+## 🖼️ Sample Images
 
-These 6 images are passed through the pretrained MobileNet and classified in real time:
+These 6 images are included in the repo and classified by MobileNet:
 
 | | | |
 |:---:|:---:|:---:|
@@ -33,128 +30,73 @@ These 6 images are passed through the pretrained MobileNet and classified in rea
 | ![4](https://raw.githubusercontent.com/trisha2103/Mobile-Net-Image-Classification/main/4.jpg) | ![5](https://raw.githubusercontent.com/trisha2103/Mobile-Net-Image-Classification/main/5.jpg) | ![6](https://raw.githubusercontent.com/trisha2103/Mobile-Net-Image-Classification/main/6.jpg) |
 | Sample 4 | Sample 5 | Sample 6 |
 
-> Each image is resized to **224×224**, preprocessed, and fed into MobileNet — which returns the top-5 predictions with confidence scores using `imagenet_utils.decode_predictions()`.
+> Each image is resized to **224×224**, preprocessed with MobileNet's normalization, and decoded into the top-5 ImageNet class predictions with confidence scores.
 
 ---
 
 ## 🚀 Features
 
-- ✅ Out-of-the-box **ImageNet prediction** on custom images (1,000 classes)
-- ✅ **Partial fine-tuning** — last 22 layers unfrozen for domain adaptation
-- ✅ Custom output head for **10-class sign language classification**
-- ✅ Automated dataset splitting into `train / valid / test`
-- ✅ **10×10 confusion matrix** for full digit-by-digit evaluation
-- ✅ MobileNet-specific preprocessing pipeline
-
----
-
-## 🗂️ Dataset Structure — Sign Language Fine-Tuning
-
-```
-Sign-Language-Digits-Dataset/
-├── train/
-│   ├── 0/     └── 1/     └── 2/  ...  └── 9/    # ~170+ images each
-├── valid/
-│   ├── 0/     └── 1/     ...  └── 9/             # 30 images each
-└── test/
-    ├── 0/     └── 1/     ...  └── 9/             # 5 images each
-```
-
-> Dataset source: [Sign Language Digits Dataset](https://github.com/ardamavi/Sign-Language-Digits-Dataset)
-
----
-
-## 🧠 Model Architecture — Fine-Tuned MobileNet
-
-| Layer | Details |
-|---|---|
-| MobileNet (early layers) | **Frozen** — preserves ImageNet features |
-| MobileNet (last 22 layers) | **Trainable** — adapts to sign language gestures |
-| Reshape | `(1024,)` — from `mobile.layers[-5].output` |
-| Dense (output) | 10 units · Softmax — digits 0–9 |
-
-> Unlike VGG16/VGG19 where all base layers are frozen, this fine-tune **unfreezes the last 22 MobileNet layers** for deeper domain adaptation while keeping training lightweight.
+- ✅ Zero training — uses pretrained **ImageNet weights** directly
+- ✅ Classifies any image into **1,000 categories**
+- ✅ Returns **top-5 predictions** with confidence scores
+- ✅ MobileNet-specific preprocessing built in
+- ✅ Lightweight and fast — runs on CPU
 
 ---
 
 ## 📖 How It Works
 
-### Part 1 — ImageNet Prediction
+### Step 1 — Load Pretrained MobileNet
 
 ```python
 mobile = tf.keras.applications.mobilenet.MobileNet()
+```
 
+### Step 2 — Preprocess the Image
+
+```python
 def prepare_image(file):
+    img_path = 'mobile_net_samples/'
     img = image.load_img(img_path + file, target_size=(224, 224))
     img_array = image.img_to_array(img)
     img_array_expanded_dims = np.expand_dims(img_array, axis=0)
     return tf.keras.applications.mobilenet.preprocess_input(img_array_expanded_dims)
+```
 
+### Step 3 — Predict & Decode
+
+```python
 preprocessed_image = prepare_image('1.jpg')
 predictions = mobile.predict(preprocessed_image)
 results = imagenet_utils.decode_predictions(predictions)
+print(results)
 ```
 
-### Part 2 — Sign Language Fine-Tuning
+### Example Output
 
-#### Step 1 — Organize the Dataset
-
-```python
-for i in range(0, 10):
-    shutil.move(f'{i}', 'train')
-    valid_samples = random.sample(os.listdir(f'train/{i}'), 30)
-    for j in valid_samples:
-        shutil.move(f'train/{i}/{j}', f'valid/{i}')
-    test_samples = random.sample(os.listdir(f'train/{i}'), 5)
-    for k in test_samples:
-        shutil.move(f'train/{i}/{k}', f'test/{i}')
 ```
-
-#### Step 2 — Build Data Generators
-
-```python
-train_batches = ImageDataGenerator(
-    preprocessing_function=tf.keras.applications.mobilenet.preprocess_input
-).flow_from_directory(train_path, target_size=(224, 224), batch_size=10)
-```
-
-#### Step 3 — Build the Fine-Tuned Model
-
-```python
-x = mobile.layers[-5].output
-x = tf.keras.layers.Reshape(target_shape=(1024,))(x)
-output = Dense(units=10, activation='softmax')(x)
-model = Model(inputs=mobile.input, outputs=output)
-
-for layer in model.layers[:-22]:
-    layer.trainable = False
-```
-
-#### Step 4 — Train & Evaluate
-
-```python
-model.compile(optimizer=Adam(learning_rate=0.0001),
-              loss='categorical_crossentropy', metrics=['accuracy'])
-model.fit(x=train_batches, validation_data=valid_batches, epochs=10, verbose=2)
-
-# Confusion matrix across all 10 digit classes
-cm_plot_labels = ['0','1','2','3','4','5','6','7','8','9']
-plot_confusion_matrix(cm=cm, classes=cm_plot_labels, title='Confusion Matrix')
+[[('n02504013', 'Indian_elephant', 0.7342),
+  ('n01871265', 'tusker', 0.1923),
+  ('n02504458', 'African_elephant', 0.0512),
+  ...]]
 ```
 
 ---
 
-## 📊 Training Configuration
+## 🗂️ Project Structure
 
-| Parameter | Value |
-|---|---|
-| Optimizer | Adam |
-| Learning Rate | 0.0001 |
-| Loss | Categorical Crossentropy |
-| Batch Size | 10 |
-| Epochs | 10 |
-| Image Size | 224 × 224 |
-| Trainable layers | Last 22 of MobileNet + Dense head |
+```
+Mobile-Net-Image-Classification/
+├── 1.jpg                                  # Sample images
+├── 2.jpg
+├── 3.jpg
+├── 4.jpg
+├── 5.jpg
+├── 6.jpg
+├── MobileNet - Image Classification.ipynb # Main notebook
+├── LICENSE
+└── README.md
+```
 
 ---
 
@@ -162,12 +104,11 @@ plot_confusion_matrix(cm=cm, classes=cm_plot_labels, title='Confusion Matrix')
 
 | Tool | Purpose |
 |---|---|
-| 🧠 `TensorFlow / Keras` | Model building & training |
+| 🧠 `TensorFlow / Keras` | Load & run MobileNet |
 | 📱 `MobileNet` | Pretrained ImageNet model |
-| 🔢 `imagenet_utils` | Decode top-5 ImageNet predictions |
-| 📊 `scikit-learn` | 10×10 confusion matrix |
-| 📈 `matplotlib` | Visualization |
-| 🐍 `NumPy` | Numerical operations |
+| 🔢 `imagenet_utils` | Decode top-5 predictions |
+| 📈 `matplotlib` | Display images inline |
+| 🐍 `NumPy` | Array operations |
 
 ---
 
@@ -179,19 +120,11 @@ git clone https://github.com/trisha2103/Mobile-Net-Image-Classification.git
 cd Mobile-Net-Image-Classification
 
 # 2. Install dependencies
-pip install tensorflow scikit-learn matplotlib numpy
+pip install tensorflow matplotlib numpy
 
-# 3. For the ImageNet demo — sample images 1.jpg–6.jpg are already in the repo
-
-# 4. For sign language fine-tuning — download the dataset:
-#    https://github.com/ardamavi/Sign-Language-Digits-Dataset
-#    Place digit folders (0–9) in Sign-Language-Digits-Dataset/
-
-# 5. Launch the notebook
+# 3. Launch the notebook
 jupyter notebook "MobileNet - Image Classification.ipynb"
 ```
-
-> 💡 GPU recommended for faster training. TensorFlow falls back to CPU automatically.
 
 ---
 
